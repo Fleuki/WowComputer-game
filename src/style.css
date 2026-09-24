@@ -383,6 +383,12 @@ html, body {
   font-size: 18px;
   cursor: pointer;
 }
+.opt-note {
+  font-size: 15px;
+  font-style: italic;
+  opacity: 0.65;
+  margin-top: 6px;
+}
 .stats {
   font-size: 20px;
   line-height: 1.6;

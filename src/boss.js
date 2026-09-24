@@ -117,7 +117,7 @@ const WAVE_FRAG = /* glsl */ `
   uniform vec3 uColor;
   varying vec2 vUv;
   void main() {
-    float a = pow(1.0 - vUv.y, 2.2) * uFade;
+    float a = pow(clamp(1.0 - vUv.y, 0.0, 1.0), 2.2) * uFade;
     float band = 0.6 + 0.4 * sin(vUv.x * 180.0);
     gl_FragColor = vec4(uColor * (1.0 + (1.0 - vUv.y) * 2.0), a * band);
   }

@@ -44,8 +44,8 @@ const SKY_FRAG = /* glsl */ `
     // soft drifting haze bands
     vec2 uv = vec2(atan(d.x, d.z) * 3.0, d.y * 9.0);
     float n = noise(uv + vec2(uTime * 0.02, 0.0)) * noise(uv * 2.3 - vec2(uTime * 0.03, 0.0));
-    col += glow * n * 0.12 * smoothstep(0.6, 0.0, h);
-    col = mix(col, uHorizon * 0.6, smoothstep(0.0, -0.2, d.y));
+    col += glow * n * 0.12 * (1.0 - smoothstep(0.0, 0.6, h));
+    col = mix(col, uHorizon * 0.6, (1.0 - smoothstep(-0.2, 0.0, d.y)));
     gl_FragColor = vec4(col, 1.0);
   }
 `;
@@ -377,9 +377,9 @@ const FALL_FRAG = /* glsl */ `
     float streak = noise(vec2(uv.x * 38.0, uv.y * 2.2 + uTime * 1.6));
     streak += 0.6 * noise(vec2(uv.x * 90.0, uv.y * 5.0 + uTime * 2.8));
     streak = smoothstep(0.55, 1.4, streak);
-    float edge = smoothstep(0.0, 0.18, uv.x) * smoothstep(1.0, 0.82, uv.x);
-    float topFade = smoothstep(1.0, 0.9, uv.y);
-    float mist = smoothstep(0.25, 0.0, uv.y);
+    float edge = smoothstep(0.0, 0.18, uv.x) * (1.0 - smoothstep(0.82, 1.0, uv.x));
+    float topFade = (1.0 - smoothstep(0.9, 1.0, uv.y));
+    float mist = (1.0 - smoothstep(0.0, 0.25, uv.y));
     float a = (streak * 0.85 + 0.12 + mist * 0.6) * edge * topFade * uOpacity;
     gl_FragColor = vec4(uColor * (0.45 + streak * 0.5 + mist * 0.4), a);
   }
@@ -407,7 +407,7 @@ const SHAFT_FRAG = /* glsl */ `
   varying float vFacing;
   varying float vDepth;
   void main() {
-    float along = smoothstep(0.0, 0.3, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
+    float along = smoothstep(0.0, 0.3, vUv.y) * (1.0 - smoothstep(0.55, 1.0, vUv.y));
     float flick = 0.85 + 0.15 * sin(uTime * 0.7 + vUv.x * 12.0);
     float a = pow(vFacing, 2.5) * along * uOpacity * flick * smoothstep(3.0, 12.0, vDepth);
     gl_FragColor = vec4(uColor, a);

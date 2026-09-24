@@ -232,7 +232,7 @@ const SLASH_VERT = /* glsl */ `
     vT = aT;
     vS = aS;
     float th = mix(uA0, uA1, aT);
-    float taper = pow(sin(3.14159 * clamp(aT, 0.0, 1.0)), 0.55);
+    float taper = pow(max(sin(3.14159 * clamp(aT, 0.0, 1.0)), 0.0), 0.55);
     float r = 1.0 - uThick * taper * (1.0 - aS);
     vec3 p = vec3(sin(th) * r, 0.0, cos(th) * r);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
@@ -288,7 +288,7 @@ const RING_FRAG = /* glsl */ `
   void main() {
     vec2 c = vUv * 2.0 - 1.0;
     float r = length(c);
-    float band = smoothstep(1.0, 1.0 - uWidth * 0.3, r) * smoothstep(1.0 - uWidth, 1.0 - uWidth * 0.3, r);
+    float band = (1.0 - smoothstep(1.0 - uWidth * 0.3, 1.0, r)) * smoothstep(1.0 - uWidth, 1.0 - uWidth * 0.3, r);
     float inner = smoothstep(1.0 - uWidth * 3.0, 1.0, r) * 0.25 * step(r, 1.0);
     float a = (band + inner) * uFade;
     if (a < 0.005) discard;

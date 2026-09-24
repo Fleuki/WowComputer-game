@@ -54,6 +54,11 @@ game.boss = new Boss(game);
 game.cam = new CameraRig(camera, game);
 game.hud = new HUD(game);
 game.player.controllable = false;
+game.post.onFallback = (mode) => {
+  const note = document.getElementById('render-note');
+  note.textContent = mode >= 2 ? 'Включён режим совместимости: без пост-эффектов' : 'Включён режим совместимости: без сглаживания';
+  note.classList.remove('hidden');
+};
 if (!quality) {
   document.getElementById('opt-quality').checked = false;
   game.arena.setQuality(false);
@@ -98,7 +103,6 @@ $('opt-music').addEventListener('change', (e) => game.audio.setMusic(e.target.ch
 $('opt-quality').addEventListener('change', (e) => {
   quality = e.target.checked;
   game.arena.setQuality(quality);
-  game.post.bloom.enabled = true;
   onResize();
 });
 
