@@ -97,7 +97,10 @@
       <div class="game-title small">ПАУЗА</div>
       <button id="resume-btn" class="big-btn">Продолжить</button>
       <button id="restart-btn" class="big-btn ghost">Начать заново</button>
-      <label class="opt"><input type="checkbox" id="opt-music" checked /> Музыка</label>
+      <div class="sliders">
+        <label class="slider" for="opt-music">Музыка <input type="range" id="opt-music" min="0" max="100" value="80" /></label>
+        <label class="slider" for="opt-sfx">Эффекты <input type="range" id="opt-sfx" min="0" max="100" value="100" /></label>
+      </div>
       <label class="opt"><input type="checkbox" id="opt-quality" checked /> Высокое качество</label>
       <div class="opt-note hidden" id="render-note"></div>
     </div>

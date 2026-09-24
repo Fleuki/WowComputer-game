@@ -99,7 +99,31 @@ $('retry-btn').addEventListener('click', () => startFight());
 $('again-btn').addEventListener('click', () => startFight());
 $('restart-btn').addEventListener('click', () => startFight());
 $('resume-btn').addEventListener('click', () => resume());
-$('opt-music').addEventListener('change', (e) => game.audio.setMusic(e.target.checked));
+// Volume settings, remembered between visits when storage is available.
+function loadSettings() {
+  try { return JSON.parse(localStorage.getItem('crimson-cathedral.settings')) || {}; } catch (_) { return {}; }
+}
+const settings = { music: 80, sfx: 100, ...loadSettings() };
+$('opt-music').value = settings.music;
+$('opt-sfx').value = settings.sfx;
+function applyVolumes() {
+  settings.music = +$('opt-music').value;
+  settings.sfx = +$('opt-sfx').value;
+  game.audio.setVolumes(settings.music / 100, settings.sfx / 100);
+  try { localStorage.setItem('crimson-cathedral.settings', JSON.stringify(settings)); } catch (_) { /* ignore */ }
+}
+$('opt-music').addEventListener('input', applyVolumes);
+$('opt-sfx').addEventListener('input', () => { applyVolumes(); game.audio.play('hit', { vol: 0.6, gap: 0.12 }); });
+game.audio.setVolumes(settings.music / 100, settings.sfx / 100);
+
+// Browsers only allow sound after an interaction: start the menu music on the first one.
+const unlockAudio = () => {
+  game.audio.init();
+  window.removeEventListener('pointerdown', unlockAudio);
+  window.removeEventListener('keydown', unlockAudio);
+};
+window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('keydown', unlockAudio);
 $('opt-quality').addEventListener('change', (e) => {
   quality = e.target.checked;
   game.arena.setQuality(quality);
@@ -124,6 +148,7 @@ function startFight() {
   const g = game;
   g.audio.init();
   g.audio.play('ui');
+  g.audio.setMuffled(false);
   g.timers.length = 0;
   g.fx.clear();
   g.player.reset();
@@ -237,12 +262,14 @@ function pause() {
   game.state = 'paused';
   game.pausedAt = performance.now();
   game.input.exitLock();
+  game.audio.setMuffled(true);
   showScreen('pause');
 }
 
 function resume() {
   if (game.state !== 'paused') return;
   game.state = game.prevState || 'play';
+  game.audio.setMuffled(false);
   showScreen(null);
   game.input.requestLock();
 }

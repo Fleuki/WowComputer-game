@@ -1,5 +1,14 @@
-// Fully synthesized sound: no audio files needed.
-// A convolution reverb gives everything a cathedral-like tail.
+// Sound effects are synthesized; music comes from two looped tracks (with the
+// old procedural score as a fallback). A convolution reverb gives the effects
+// a cathedral-like tail.
+import drownedSrc from './music/drowned_cathedral.mp3?inline';
+import ashSrc from './music/ash_hunter.mp3?inline';
+
+// loopAt: where the next pass starts, just before each file's fade-out tail.
+const TRACKS = {
+  drowned: { src: drownedSrc, loopAt: 83.3 },
+  ash: { src: ashSrc, loopAt: 73.3 },
+};
 
 const NOTE = (n) => 440 * Math.pow(2, (n - 69) / 12);
 
@@ -20,6 +29,11 @@ export class AudioSys {
     this.nextTime = 0;
     this.bpm = 92;
     this._lastPlay = {};
+    this.musicVol = 0.8;
+    this.sfxVol = 1;
+    this.tracksReady = false;
+    this.cur = null;
+    this.muffled = false;
   }
 
   init() {
@@ -54,11 +68,20 @@ export class AudioSys {
     this.sfx.connect(this.sfxSend).connect(this.reverb);
 
     this.music = ctx.createGain();
-    this.music.gain.value = this.musicOn ? 0.55 : 0;
     this.music.connect(this.master);
     const mSend = ctx.createGain();
     mSend.gain.value = 0.5;
     this.music.connect(mSend).connect(this.reverb);
+
+    // Recorded tracks: already mixed, so they skip the reverb.
+    this.musicFilter = ctx.createBiquadFilter();
+    this.musicFilter.type = 'lowpass';
+    this.musicFilter.frequency.value = 700;
+    this.musicFilter.Q.value = 0.6;
+    this.trackOut = ctx.createGain();
+    this.musicFilter.connect(this.trackOut).connect(this.master);
+    this._applyVolumes();
+    this._loadTracks();
 
     const len = ctx.sampleRate * 2;
     this.noiseBuf = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -69,16 +92,107 @@ export class AudioSys {
     this._timer = setInterval(() => this._schedule(), 25);
   }
 
-  setMusic(on) {
-    this.musicOn = on;
-    if (this.music) this.music.gain.setTargetAtTime(on ? 0.55 : 0, this.ctx.currentTime, 0.3);
+  setVolumes(music, sfx) {
+    this.musicVol = music;
+    this.sfxVol = sfx;
+    this._applyVolumes();
+  }
+
+  _applyVolumes() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.music.gain.setTargetAtTime(this.musicVol * 0.55, t, 0.05);
+    this.trackOut.gain.setTargetAtTime(this.musicVol * 0.6, t, 0.05);
+    this.sfx.gain.setTargetAtTime(this.sfxVol * 0.9, t, 0.05);
   }
 
   setIntensity(v) {
     if (v !== this.intensity) {
       this.intensity = v;
       this.bpm = v >= 2 ? 108 : 92;
+      this._applyIntensity();
     }
+  }
+
+  /** Muffle the music (pause menu). */
+  setMuffled(m) {
+    this.muffled = m;
+    this._applyFilter();
+  }
+
+  // ------------------------------------------------------------------ tracks
+  async _loadTracks() {
+    try {
+      for (const t of Object.values(TRACKS)) {
+        const bin = atob(t.src.slice(t.src.indexOf(',') + 1));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        t.buffer = await this.ctx.decodeAudioData(bytes.buffer);
+      }
+      this.tracksReady = true;
+      this._applyIntensity();
+    } catch (e) {
+      console.warn('[audio] music tracks unavailable, using the synthesized score', e);
+    }
+  }
+
+  _applyIntensity() {
+    if (!this.ctx || !this.tracksReady) return;
+    const I = this.intensity;
+    const want = I >= 2 ? 'ash' : I >= 0 ? 'drowned' : null;
+    if (want !== (this.cur && this.cur.name)) {
+      if (this.cur) this._stopTrack(this.cur, I < 0 ? 2.5 : 1.6);
+      this.cur = want ? this._startTrack(want, I >= 2 ? 1.2 : 2.5) : null;
+    }
+    this._applyFilter();
+  }
+
+  _applyFilter() {
+    if (!this.musicFilter) return;
+    const I = this.intensity;
+    // Menu and pause sound "through the wall"; the fight opens it up.
+    const f = I < 0 ? 350 : this.muffled ? 900 : I === 0 ? 700 : 20000;
+    this.musicFilter.frequency.setTargetAtTime(f, this.ctx.currentTime, I > 0 && !this.muffled ? 0.5 : 0.25);
+  }
+
+  _startTrack(name, fadeIn) {
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(1, now + fadeIn);
+    gain.connect(this.musicFilter);
+    const cur = { name, gain, sources: [], nextAt: 0 };
+    this._queuePass(cur, now + 0.05, 0.02);
+    return cur;
+  }
+
+  _queuePass(cur, when, fade) {
+    const ctx = this.ctx;
+    const T = TRACKS[cur.name];
+    const src = ctx.createBufferSource();
+    src.buffer = T.buffer;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(1, when + fade);
+    src.connect(g).connect(cur.gain);
+    src.start(when);
+    cur.sources.push(src);
+    src.onended = () => {
+      const i = cur.sources.indexOf(src);
+      if (i >= 0) cur.sources.splice(i, 1);
+    };
+    // The previous pass keeps playing through its own fade-out tail.
+    cur.nextAt = when + T.loopAt;
+  }
+
+  _stopTrack(cur, fadeOut) {
+    const now = this.ctx.currentTime;
+    cur.gain.gain.cancelScheduledValues(now);
+    cur.gain.gain.setValueAtTime(Math.max(cur.gain.gain.value, 0.0001), now);
+    cur.gain.gain.linearRampToValueAtTime(0.0001, now + fadeOut);
+    cur.stopped = true;
+    for (const s of cur.sources) s.stop(now + fadeOut + 0.05);
   }
 
   _impulse(seconds, decay) {
@@ -272,7 +386,11 @@ export class AudioSys {
   // ------------------------------------------------------------------ music
   _schedule() {
     const ctx = this.ctx;
-    if (!ctx || this.intensity < 0) {
+    // Keep the recorded track looping.
+    if (ctx && this.cur && !this.cur.stopped && ctx.currentTime > this.cur.nextAt - 0.5) {
+      this._queuePass(this.cur, this.cur.nextAt, 0.3);
+    }
+    if (!ctx || this.intensity < 0 || this.tracksReady) {
       if (ctx) this.nextTime = ctx.currentTime + 0.1;
       return;
     }
