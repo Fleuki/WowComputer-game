@@ -1,0 +1,19 @@
+{
+  "name": "crimson-cathedral",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "3D boss fight inspired by Hollow Knight: Silksong",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "vite": "^8.3.1",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}
