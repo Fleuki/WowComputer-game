@@ -90,7 +90,7 @@ html, body {
   background: linear-gradient(90deg, rgba(243, 236, 226, 0.7), rgba(243, 236, 226, 0.1));
 }
 .mask {
-  width: 22px;
+  width: 24px;
   height: 31px;
   position: relative;
   transition: transform 0.2s;
@@ -98,8 +98,11 @@ html, body {
 .mask svg { width: 100%; height: 100%; display: block; }
 .mask .m-body { fill: var(--bone); }
 .mask .m-eye { fill: #140c10; }
+.mask .m-orn { fill: var(--gold); }
+.mask .m-feather { fill: none; stroke: var(--bone); stroke-width: 2.4; stroke-linecap: round; }
 .mask.empty .m-body { fill: rgba(20, 10, 14, 0.9); stroke: rgba(243, 236, 226, 0.35); stroke-width: 1; }
-.mask.empty .m-eye { fill: transparent; }
+.mask.empty .m-eye, .mask.empty .m-orn { fill: transparent; }
+.mask.empty .m-feather { stroke: rgba(243, 236, 226, 0.3); }
 .mask.lost { animation: maskLost 0.45s ease-out; }
 .mask.gained { animation: maskGain 0.6s ease-out; }
 @keyframes maskLost {
@@ -284,8 +287,9 @@ html, body {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
+  overflow-y: auto;
   background: radial-gradient(ellipse at center, rgba(20, 5, 10, 0.25) 0%, rgba(5, 2, 4, 0.8) 75%);
   animation: fadeIn 0.6s ease-out;
   z-index: 5;
@@ -299,7 +303,7 @@ html, body {
 .game-title {
   font-family: var(--display);
   font-weight: 700;
-  font-size: clamp(38px, 7vw, 84px);
+  font-size: clamp(34px, min(6.5vw, 9vh), 80px);
   letter-spacing: 0.18em;
   color: #fff;
   text-shadow: 0 0 30px rgba(200, 30, 60, 0.6), 0 0 6px #000;
@@ -329,6 +333,39 @@ html, body {
 .big-btn:hover { transform: translateY(-1px); box-shadow: 0 0 18px rgba(255, 80, 110, 0.5); background: linear-gradient(180deg, rgba(180, 30, 55, 0.85), rgba(80, 8, 20, 0.9)); }
 .big-btn.ghost { background: rgba(10, 5, 8, 0.6); }
 
+.bosses {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.boss-card {
+  display: grid;
+  gap: 2px;
+  width: 250px;
+  padding: 12px 16px 14px;
+  text-align: left;
+  font-family: var(--serif);
+  color: var(--bone);
+  background: rgba(10, 5, 8, 0.6);
+  border: 1px solid rgba(243, 236, 226, 0.25);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.boss-card .bc-arena {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+.boss-card .bc-name { font-family: var(--display); font-size: 22px; letter-spacing: 0.08em; }
+.boss-card .bc-desc { font-size: 15px; opacity: 0.75; line-height: 1.3; }
+.boss-card.active { border-color: var(--bone); background: rgba(120, 16, 34, 0.55); }
+.boss-card.drowned.active { background: rgba(20, 70, 80, 0.6); }
+.boss-card:focus-visible, .diff:focus-visible, .big-btn:focus-visible { outline: 2px solid var(--bone); outline-offset: 2px; }
+.tc-big.long { font-size: 60px; letter-spacing: 0.16em; }
 .difficulty {
   display: flex;
   justify-content: center;
@@ -361,8 +398,8 @@ html, body {
   grid-template-columns: 1fr 1fr;
   gap: 4px 28px;
   text-align: left;
-  font-size: 17px;
-  margin-top: 26px;
+  font-size: 16px;
+  margin-top: 18px;
   padding: 16px 22px;
   background: rgba(8, 3, 6, 0.55);
   border-top: 1px solid rgba(243, 236, 226, 0.2);
@@ -442,4 +479,10 @@ html, body {
 @media (max-width: 700px) {
   .controls { grid-template-columns: 1fr; }
   .tc-big { font-size: 52px; }
+}
+
+@media (max-height: 760px) {
+  .game-sub { margin-bottom: 12px; }
+  .controls { font-size: 14px; padding: 10px 18px; margin-top: 12px; }
+  .big-btn { margin: 8px auto; padding: 10px 24px; }
 }

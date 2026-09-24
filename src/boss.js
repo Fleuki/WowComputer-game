@@ -123,8 +123,8 @@ const WAVE_FRAG = /* glsl */ `
   }
 `;
 
-class Shockwave {
-  constructor(boss, origin, { speed = 13, maxR = 17, heavy = true, height = 0.9 } = {}) {
+export class Shockwave {
+  constructor(boss, origin, { speed = 13, maxR = 17, heavy = true, height = 0.9, color = [1.0, 0.35, 0.3], dust = [1, 0.4, 0.3] } = {}) {
     this.boss = boss;
     this.o = origin.clone();
     this.r = 0.8;
@@ -132,10 +132,11 @@ class Shockwave {
     this.maxR = maxR;
     this.heavy = heavy;
     this.hit = false;
+    this.dust = dust;
     const mat = new THREE.ShaderMaterial({
       vertexShader: WAVE_VERT,
       fragmentShader: WAVE_FRAG,
-      uniforms: { uFade: { value: 1 }, uColor: { value: new THREE.Color(1.0, 0.35, 0.3) } },
+      uniforms: { uFade: { value: 1 }, uColor: { value: new THREE.Color(color[0], color[1], color[2]) } },
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -162,7 +163,7 @@ class Shockwave {
     // Throw up dust along the front.
     if (Math.random() < 0.9) {
       const a = Math.random() * Math.PI * 2;
-      this.boss.game.fx.glow.spawn(this.o.x + Math.cos(a) * this.r, 0.2, this.o.z + Math.sin(a) * this.r, 0, rand(1, 3), 0, 1, 0.4, 0.3, 0.4, 0.4, 0, 1);
+      this.boss.game.fx.glow.spawn(this.o.x + Math.cos(a) * this.r, 0.2, this.o.z + Math.sin(a) * this.r, 0, rand(1, 3), 0, this.dust[0], this.dust[1], this.dust[2], 0.4, 0.4, 0, 1);
     }
     if (k >= 1) { this.dispose(); return false; }
     return true;
@@ -305,7 +306,7 @@ class Crescent {
 }
 
 // ------------------------------------------------------------------ cloth
-class Cloth {
+export class Cloth {
   constructor(cols, rows, material) {
     this.cols = cols;
     this.rows = rows;
@@ -516,7 +517,19 @@ export class Boss {
     for (let i = 0; i < 6; i++) this.capsules.push({ a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.5 });
 
     this.hazards = [];
+    this.id = 'carmine';
+    this.arena = 'crimson';
+    this.music = { p1: 'drowned', p2: 'ash' };
+    this.title = { small: 'Страж Багряного Собора', big: 'КАРМИН' };
+    this.hudName = 'Кармин, Страж Собора';
+    this.shown = true;
     this.reset();
+  }
+
+  setVisible(v) {
+    this.shown = v;
+    this.group.visible = this.limbs.visible = this.spear.visible = this.cape.mesh.visible = v;
+    this.light.visible = v;
   }
 
   // ---------------------------------------------------------------- building
@@ -773,7 +786,7 @@ export class Boss {
     this.mats.eye.emissiveIntensity = 0;
     this.light.intensity = 0;
     this.bobT = 0;
-    this.group.visible = this.limbs.visible = this.spear.visible = this.cape.mesh.visible = true;
+    this.setVisible(this.shown);
     this.updateSkeleton(0, true);
     for (const leg of this.legs) {
       leg.foot.copy(this.idealFoot(leg, this.v1));

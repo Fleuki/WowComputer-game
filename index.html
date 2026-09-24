@@ -69,7 +69,19 @@
   <div id="menu" class="screen">
     <div class="menu-inner">
       <div class="game-title">БАГРЯНЫЙ СОБОР</div>
-      <div class="game-sub">битва с Кармином, Стражем Шпиля</div>
+      <div class="game-sub">Веспера, свечная моль, против хозяев собора</div>
+      <div class="bosses" id="boss-select">
+        <button class="boss-card active" data-boss="carmine">
+          <span class="bc-arena">Багряный Собор</span>
+          <span class="bc-name">Кармин</span>
+          <span class="bc-desc">Страж с копьём. Выпады, прыжки, багряные шипы.</span>
+        </button>
+        <button class="boss-card drowned" data-boss="abbess">
+          <span class="bc-arena">Затонувший Собор</span>
+          <span class="bc-name">Настоятельница</span>
+          <span class="bc-desc">Колокольный звон, приливы, руки из-под воды.</span>
+        </button>
+      </div>
       <div class="difficulty">
         <button class="diff active" data-diff="normal">Странница<small>тяжёлые удары во 2-й фазе — 2 маски</small></button>
         <button class="diff" data-diff="hard">Охотница<small>больше здоровья, удары по 2 маски</small></button>
@@ -116,7 +128,7 @@
 
   <div id="victory" class="screen hidden">
     <div class="menu-inner">
-      <div class="game-sub">Страж пал. Шпиль свободен.</div>
+      <div class="game-sub" id="victory-line">Страж пал. Шпиль свободен.</div>
       <div class="game-title">ПОБЕДА</div>
       <div class="stats" id="victory-stats"></div>
       <button id="again-btn" class="big-btn">Сразиться ещё раз</button>

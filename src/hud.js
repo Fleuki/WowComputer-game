@@ -1,6 +1,6 @@
 import { damp } from './utils.js';
 
-const MASK_SVG = `<svg viewBox="0 0 24 34"><path class="m-body" d="M5 1.5 C6 6 7 9.5 8.2 11.6 C5.2 12.8 3.5 16 3.5 20 C3.5 26.5 8 32 12 33 C16 32 20.5 26.5 20.5 20 C20.5 16 18.8 12.8 15.8 11.6 C17 9.5 18 6 19 1.5 C16.5 5.5 15.2 8.5 14.3 10.9 C12.8 10.6 11.2 10.6 9.7 10.9 C8.8 8.5 7.5 5.5 5 1.5 Z"/><ellipse class="m-eye" cx="8.8" cy="21" rx="2.1" ry="3.4" transform="rotate(18 8.8 21)"/><ellipse class="m-eye" cx="15.2" cy="21" rx="2.1" ry="3.4" transform="rotate(-18 15.2 21)"/></svg>`;
+const MASK_SVG = `<svg viewBox="0 0 26 34"><path class="m-feather" d="M9.5 13 C8 8 5 4.5 1.5 3.5 M16.5 13 C18 8 21 4.5 24.5 3.5"/><circle class="m-body" cx="13" cy="21.5" r="10.5"/><ellipse class="m-eye" cx="8.9" cy="22.5" rx="2.5" ry="3.6" transform="rotate(28 8.9 22.5)"/><ellipse class="m-eye" cx="17.1" cy="22.5" rx="2.5" ry="3.6" transform="rotate(-28 17.1 22.5)"/><path class="m-orn" d="M13 12.8 C14.2 14.6 14.2 16.4 13 17.8 C11.8 16.4 11.8 14.6 13 12.8 Z"/></svg>`;
 
 export class HUD {
   constructor(game) {

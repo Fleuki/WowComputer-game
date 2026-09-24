@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp, dampAngle, lerp, rand, wrapAngle, easeOutCubic, distPointSegment, distSegmentSegment } from './utils.js';
 import { ARENA_RADIUS } from './arena.js';
+import { buildVespera, animateVespera } from './heroine.js';
 
 const GRAVITY = 38;
 const RUN_SPEED = 7.4;
@@ -17,148 +18,11 @@ const COMBO = [
   { dur: 0.42, act: [0.1, 0.19], from: { y: 0.0, p: -1.6 }, to: { y: 0.0, p: 0.9 }, dmg: 21, lunge: 7, roll: Math.PI / 2, reach: 1.45, r: 1.35, chop: true },
 ];
 
-// ------------------------------------------------------------------ model
-function buildModel() {
-  const mats = {
-    body: new THREE.MeshStandardMaterial({ color: 0x17111a, roughness: 0.55, metalness: 0.1 }),
-    mask: new THREE.MeshStandardMaterial({ color: 0xf6f0e6, roughness: 0.32, metalness: 0.0, emissive: 0x2a2020, emissiveIntensity: 0.25 }),
-    eye: new THREE.MeshBasicMaterial({ color: 0x060306 }),
-    cloak: new THREE.MeshStandardMaterial({ color: 0xa8182f, roughness: 0.72, side: THREE.DoubleSide, emissive: 0x2a0308, emissiveIntensity: 0.5 }),
-    needle: new THREE.MeshStandardMaterial({ color: 0xf0ece6, roughness: 0.2, metalness: 0.85, emissive: 0x302828, emissiveIntensity: 0.3 }),
-    thread: new THREE.MeshStandardMaterial({ color: 0xf2e8dc, roughness: 0.8 }),
-  };
-
-  const root = new THREE.Group();
-  const body = new THREE.Group();
-  root.add(body);
-
-  // Pelvis + legs
-  const pelvis = new THREE.Group();
-  pelvis.position.y = 0.44;
-  body.add(pelvis);
-  const legs = [];
-  for (const side of [-1, 1]) {
-    const hip = new THREE.Group();
-    hip.position.set(side * 0.075, 0, 0);
-    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.038, 0.03, 0.24, 6).translate(0, -0.12, 0), mats.body);
-    hip.add(thigh);
-    const knee = new THREE.Group();
-    knee.position.y = -0.23;
-    const shin = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.24, 6).rotateX(Math.PI).translate(0, -0.12, 0), mats.body);
-    knee.add(shin);
-    hip.add(knee);
-    pelvis.add(hip);
-    legs.push({ hip, knee });
-  }
-
-  // Torso
-  const torso = new THREE.Group();
-  torso.position.y = 0.44;
-  body.add(torso);
-  const chest = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.18, 4, 10), mats.body);
-  chest.position.y = 0.16;
-  chest.scale.set(1, 1, 0.85);
-  torso.add(chest);
-
-  // Head
-  const head = new THREE.Group();
-  head.position.y = 0.43;
-  torso.add(head);
-  const maskGeo = new THREE.SphereGeometry(0.2, 24, 18);
-  {
-    const p = maskGeo.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-      if (y < 0) {
-        const k = 1 + (y / 0.2) * 0.42;
-        x *= k;
-        z *= 1 + (y / 0.2) * 0.15;
-        y *= 1.3;
-      }
-      p.setXYZ(i, x, y * 1.08, z * 0.92);
-    }
-    maskGeo.computeVertexNormals();
-  }
-  const mask = new THREE.Mesh(maskGeo, mats.mask);
-  mask.position.y = 0.14;
-  mask.castShadow = true;
-  head.add(mask);
-  for (const side of [-1, 1]) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 10), mats.eye);
-    eye.scale.set(0.95, 1.55, 0.35);
-    eye.position.set(side * 0.078, 0.1, 0.168);
-    eye.rotation.set(0, side * 0.35, side * 0.32);
-    head.add(eye);
-    // Horn: a bent cone sweeping up and back.
-    const hg = new THREE.ConeGeometry(0.036, 0.62, 10, 10).translate(0, 0.31, 0);
-    const hp = hg.attributes.position;
-    for (let i = 0; i < hp.count; i++) {
-      const y = hp.getY(i);
-      hp.setX(i, hp.getX(i) + side * y * y * 0.12);
-      hp.setZ(i, hp.getZ(i) - y * y * 0.75);
-    }
-    hg.computeVertexNormals();
-    const horn = new THREE.Mesh(hg, mats.mask);
-    horn.position.set(side * 0.075, 0.27, -0.04);
-    horn.rotation.set(-0.1, 0, -side * 0.2);
-    horn.castShadow = true;
-    head.add(horn);
-  }
-
-  // Cloak: an open cone around the shoulders whose vertices we deform.
-  const cloakGeo = new THREE.CylinderGeometry(0.12, 0.42, 0.56, 22, 6, true);
-  cloakGeo.translate(0, -0.28, 0);
-  {
-    const p = cloakGeo.attributes.position;
-    for (let i = 0; i < p.count; i++) {
-      const y = p.getY(i);
-      if (y < -0.55) p.setY(i, y + (Math.random() - 0.3) * 0.13);
-    }
-  }
-  const cloak = new THREE.Mesh(cloakGeo, mats.cloak);
-  cloak.position.set(0, 0.8, -0.02);
-  cloak.castShadow = true;
-  body.add(cloak);
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.045, 8, 16).rotateX(Math.PI / 2), mats.cloak);
-  collar.position.set(0, 0.79, 0);
-  body.add(collar);
-  const cloakBase = Float32Array.from(cloakGeo.attributes.position.array);
-
-  // Right arm with needle.
-  const armR = new THREE.Group();
-  armR.position.set(-0.13, 0.28, 0.02);
-  armR.rotation.order = 'YXZ';
-  torso.add(armR);
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.022, 0.24, 6).rotateX(Math.PI / 2).translate(0, 0, 0.12), mats.body);
-  armR.add(arm);
-  const needle = new THREE.Group();
-  needle.position.z = 0.24;
-  armR.add(needle);
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.14, 6).rotateX(Math.PI / 2), mats.thread);
-  needle.add(handle);
-  const blade = new THREE.Mesh(new THREE.ConeGeometry(0.024, 1.0, 8).rotateX(Math.PI / 2).translate(0, 0, 0.55), mats.needle);
-  blade.castShadow = true;
-  needle.add(blade);
-  const eyeRing = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.008, 6, 10), mats.needle);
-  eyeRing.position.z = -0.09;
-  needle.add(eyeRing);
-
-  const armL = new THREE.Group();
-  armL.position.set(0.13, 0.28, 0.02);
-  armL.rotation.order = 'YXZ';
-  torso.add(armL);
-  armL.add(new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.26, 6).rotateX(Math.PI / 2).translate(0, 0, 0.13), mats.body));
-
-  root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-
-  return { root, body, pelvis, legs, torso, head, cloak, cloakBase, armR, armL, needle, blade, mats };
-}
-
 // ------------------------------------------------------------------ player
 export class Player {
   constructor(game) {
     this.game = game;
-    this.model = buildModel();
+    this.model = buildVespera();
     game.scene.add(this.model.root);
     this.pins = [];
     this.pinGeo = new THREE.CylinderGeometry(0.02, 0.005, 0.7, 5).rotateX(Math.PI / 2);
@@ -306,6 +170,7 @@ export class Player {
             this.jumpBuffer = 0;
             this.jumpCut = false;
             g.audio.play('doubleJump');
+            this.flap = 1;
             g.fx.ring(this.pos, { r0: 0.2, r1: 1.4, dur: 0.3, color: [1, 0.95, 0.95], width: 0.35, y: this.pos.y + 0.1 });
             g.fx.burst(this.center, { count: 14, color: [1, 1, 1], speed: 3, size: 0.2, life: 0.4, gravity: 3 });
           }
@@ -783,42 +648,11 @@ export class Player {
     m.armL.rotation.set(this.state === 'bind' ? -1.1 : 0.9 + Math.sin(this.runPhase) * 0.5 * runK, 0.4, 0);
     m.head.rotation.x = this.state === 'bind' ? 0.35 : -m.body.rotation.x * 0.4;
 
-    // Cloak deformation
-    this.deformCloak(dt, t);
-  }
-
-  deformCloak(dt, t) {
-    const m = this.model;
-    const geo = m.cloak.geometry;
-    const pos = geo.attributes.position;
-    const base = m.cloakBase;
-    // Local-space velocity (model faces +Z)
-    const s = Math.sin(-this.yaw), c = Math.cos(-this.yaw);
-    let lvx = this.vel.x * c + this.vel.z * s;
-    let lvz = -this.vel.x * s + this.vel.z * c;
-    const lvy = this.vel.y;
-    if (this.state === 'storm') { lvx = 0; lvz = 0; }
-    const sp = Math.min(Math.hypot(lvx, lvz), 24);
-    const flare = this.state === 'storm' ? 0.9 : this.state === 'dash' ? 0.25 : this.state === 'bind' ? 0.4 : 0;
-    this._flare = damp(this._flare || 0, flare, 12, dt);
-    this._lvx = damp(this._lvx || 0, lvx, 8, dt);
-    this._lvz = damp(this._lvz || 0, lvz, 8, dt);
-    this._lvy = damp(this._lvy || 0, lvy, 8, dt);
-    for (let i = 0; i < pos.count; i++) {
-      const bx = base[i * 3], by = base[i * 3 + 1], bz = base[i * 3 + 2];
-      const h = clamp(-by / 0.56, 0, 1.25);
-      const h2 = Math.pow(h, 1.4);
-      const ang = Math.atan2(bx, bz);
-      const flut = Math.sin(t * 10 + ang * 3 + h * 4) * 0.03 * h * (0.4 + sp * 0.06);
-      const rf = 1 + this._flare * h * 1.4;
-      let x = bx * rf - this._lvx * 0.03 * h2 + flut * Math.cos(ang);
-      let z = bz * rf - this._lvz * 0.03 * h2 + flut * Math.sin(ang);
-      let y = by + (sp * 0.012 + Math.max(0, -this._lvy) * 0.018 + this._flare * 0.25) * h2;
-      // Keep the hem from stretching too far.
-      y = Math.min(y, by + 0.4 * h);
-      pos.setXYZ(i, x, y, z);
-    }
-    pos.needsUpdate = true;
-    geo.computeVertexNormals();
+    // Wings and candle flame
+    this.flap = Math.max(0, (this.flap || 0) - dt * 2.5);
+    animateVespera(m, {
+      t, name: this.state, speed: hs, vy: this.vel.y, onGround: this.onGround,
+      hpFrac: this.hp / this.maxHp, flap: this.flap, deadT: this.stateT,
+    }, dt);
   }
 }

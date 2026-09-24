@@ -7,6 +7,7 @@ import { Ambient } from './ambient.js';
 import { Post } from './post.js';
 import { Player } from './player.js';
 import { Boss } from './boss.js';
+import { Abbess } from './abbess.js';
 import { CameraRig } from './camera.js';
 import { HUD } from './hud.js';
 
@@ -46,11 +47,13 @@ game.renderNow = () => game.post.render(1 / 60, performance.now() / 1000, 0);
 game.input = new Input(canvas);
 game.audio = new AudioSys();
 game.fx = new FX(scene);
-game.arena = buildArena(scene, renderer);
 game.ambient = new Ambient(scene);
 game.post = new Post(renderer, scene, camera);
 game.player = new Player(game);
-game.boss = new Boss(game);
+game.bosses = { carmine: new Boss(game), abbess: new Abbess(game) };
+game.boss = game.bosses.carmine;
+game.arenas = {};
+game.arena = null;
 game.cam = new CameraRig(camera, game);
 game.hud = new HUD(game);
 game.player.controllable = false;
@@ -59,9 +62,39 @@ game.post.onFallback = (mode) => {
   note.textContent = mode >= 2 ? 'Включён режим совместимости: без пост-эффектов' : 'Включён режим совместимости: без сглаживания';
   note.classList.remove('hidden');
 };
-if (!quality) {
-  document.getElementById('opt-quality').checked = false;
-  game.arena.setQuality(false);
+if (!quality) document.getElementById('opt-quality').checked = false;
+
+// Arenas are built on first use and kept around.
+function getArena(name) {
+  if (!game.arenas[name]) {
+    game.arenas[name] = buildArena(scene, renderer, name, quality);
+    game.arenas[name].setQuality(quality);
+  }
+  return game.arenas[name];
+}
+
+/** Switch the fight: boss, its cathedral, music and names. */
+function selectBoss(id) {
+  const boss = game.bosses[id] || game.bosses.carmine;
+  for (const b of Object.values(game.bosses)) b.setVisible(b === boss);
+  const arena = getArena(boss.arena);
+  if (game.arena !== arena) {
+    if (game.arena) game.arena.deactivate();
+    arena.activate();
+    game.arena = arena;
+    game.ambient.setTheme(boss.arena);
+  }
+  game.boss = boss;
+  game.bossId = boss.id;
+  boss.reset();
+  game.audio.setTrackPlan(boss.music);
+  document.getElementById('boss-name').textContent = boss.hudName;
+  document.querySelector('#title-card .tc-small').textContent = boss.title.small;
+  const big = document.querySelector('#title-card .tc-big');
+  big.textContent = boss.title.big;
+  big.classList.toggle('long', boss.title.big.length > 8);
+  document.getElementById('victory-line').textContent = boss.id === 'abbess' ? 'Колокол умолк. Вода отступает.' : 'Страж пал. Шпиль свободен.';
+  document.querySelectorAll('.boss-card').forEach((c) => c.classList.toggle('active', c.dataset.boss === boss.id));
 }
 
 let pointScale = 400;
@@ -94,6 +127,15 @@ document.querySelectorAll('.diff').forEach((b) => {
     game.audio.play('ui');
   });
 });
+document.querySelectorAll('.boss-card').forEach((c) => {
+  c.addEventListener('click', () => {
+    game.audio.init();
+    game.audio.play('ui');
+    selectBoss(c.dataset.boss);
+    settings.boss = c.dataset.boss;
+    saveSettings();
+  });
+});
 $('start-btn').addEventListener('click', () => startFight());
 $('retry-btn').addEventListener('click', () => startFight());
 $('again-btn').addEventListener('click', () => startFight());
@@ -103,13 +145,17 @@ $('resume-btn').addEventListener('click', () => resume());
 function loadSettings() {
   try { return JSON.parse(localStorage.getItem('crimson-cathedral.settings')) || {}; } catch (_) { return {}; }
 }
-const settings = { music: 80, sfx: 100, ...loadSettings() };
+const settings = { music: 80, sfx: 100, boss: 'carmine', ...loadSettings() };
+selectBoss(settings.boss);
 $('opt-music').value = settings.music;
 $('opt-sfx').value = settings.sfx;
 function applyVolumes() {
   settings.music = +$('opt-music').value;
   settings.sfx = +$('opt-sfx').value;
   game.audio.setVolumes(settings.music / 100, settings.sfx / 100);
+  saveSettings();
+}
+function saveSettings() {
   try { localStorage.setItem('crimson-cathedral.settings', JSON.stringify(settings)); } catch (_) { /* ignore */ }
 }
 $('opt-music').addEventListener('input', applyVolumes);
@@ -126,7 +172,7 @@ window.addEventListener('pointerdown', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
 $('opt-quality').addEventListener('change', (e) => {
   quality = e.target.checked;
-  game.arena.setQuality(quality);
+  for (const a of Object.values(game.arenas)) a.setQuality(quality);
   onResize();
 });
 
@@ -274,6 +320,24 @@ function resume() {
   game.input.requestLock();
 }
 
+// Ripples and splashes when the heroine runs or lands in the flooded nave.
+function waterFootsteps(dt) {
+  const p = game.player;
+  const sp = Math.hypot(p.vel.x, p.vel.z);
+  game.rippleT = (game.rippleT || 0) - dt;
+  if (p.pos.y < 0.3 && sp > 1.5 && game.rippleT <= 0) {
+    game.rippleT = 0.16;
+    game.fx.ring(p.pos, { r0: 0.1, r1: 0.9, dur: 0.5, color: [0.55, 0.9, 1], width: 0.3, y: 0.22 });
+    game.fx.burst(p.pos.clone().setY(0.25), { count: 3, color: [0.75, 0.95, 1], speed: 1.5, size: 0.18, life: 0.35, gravity: 10, up: 2 });
+  }
+  if (p.onGround && !game.wasGround && p.pos.y < 0.05) {
+    game.fx.ring(p.pos, { r0: 0.2, r1: 1.6, dur: 0.6, color: [0.55, 0.9, 1], width: 0.25, y: 0.22 });
+    game.fx.burst(p.pos.clone().setY(0.25), { count: 10, color: [0.75, 0.95, 1], speed: 3, size: 0.22, life: 0.45, gravity: 12, up: 3 });
+    game.audio.play('splash', { vol: 0.35, pitch: 1.6, gap: 0.1 });
+  }
+  game.wasGround = p.onGround;
+}
+
 // ------------------------------------------------------------------ loop
 const timer = new THREE.Timer();
 timer.connect(document);
@@ -313,6 +377,7 @@ function tick() {
     g.time += dt;
     g.player.update(dt);
     g.boss.update(dt);
+    if (g.arena.water) waterFootsteps(dt);
     if (g.state === 'play') g.stats.time += dt;
     g.fx.update(dt, pointScale);
     g.ambient.update(dt, g.time, pointScale, g.boss.phase === 2 && g.boss.alive ? 1 : 0, g.boss.pos, camera.position);

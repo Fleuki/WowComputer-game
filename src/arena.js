@@ -2,7 +2,36 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { canvasTexture, makeNoise2D, fbm, mulberry32, lerp } from './utils.js';
 
+import { buildWater } from './water.js';
+
 const ni = (g) => (g.index ? g.toNonIndexed() : g);
+
+// Each boss gets its own take on the cathedral.
+export const THEMES = {
+  crimson: {
+    fog: 0x2c171e, fog2: 0x3a0f16, fogDensity: 0.0125,
+    zenith: 0x0d060b, horizon: 0x4a2229, glow: 0xffc49e, glow2: 0xff4030,
+    hemi: 0xffc6b4, hemiGround: 0x1b0b10, hemiI: 0.6, hemi2: 0xff8a8a,
+    sun: 0xffc29c, sunI: 2.3, sun2: 0xff6a4a, fill: 0xff8fa0, window: 0xffb899,
+    hue: 345, stone: 0x9a8a90, pillar: 0x8d7d84, outer: 0x1d1216, far: 0x2a1c22,
+    waterfall: 0xf0c8c0, shaft: 0xffc8a8, sigil: 0xff3048,
+    leaves: [0xb3122c, 0x8e0d22, 0xd4243d, 0x6e0a1a, 0xe03a4f, 0x9a1830], leafEmissive: 0x3a0610, trunk: 0x1a1013,
+    falls: [[-14, -46, 7, 46], [9, -50, 10, 52], [30, -40, 5, 40], [-34, -34, 5, 36], [0, -66, 12, 50]],
+    water: false,
+  },
+  drowned: {
+    fog: 0x0b1920, fog2: 0x24101a, fogDensity: 0.018,
+    zenith: 0x03070a, horizon: 0x142a33, glow: 0x7fb6c4, glow2: 0xff5a50,
+    hemi: 0x9cc2cc, hemiGround: 0x040a0d, hemiI: 0.42, hemi2: 0xc88a90,
+    sun: 0xbcd8e4, sunI: 1.5, sun2: 0xff8070, fill: 0x6f9fb2, window: 0x8fc4d0,
+    hue: 195, stone: 0x7c8b90, pillar: 0x6f8189, outer: 0x0c1518, far: 0x142228,
+    waterfall: 0x9cc8d2, shaft: 0xa8d8e4, sigil: 0x6fd8e8,
+    leaves: [0x4d6a70, 0x384f55, 0x6d8d93, 0x25353a, 0x7a1c28, 0x5a787e], leafEmissive: 0x04100f, trunk: 0x0e1618,
+    falls: [[-14, -46, 7, 46], [9, -50, 10, 52], [30, -40, 5, 40], [-34, -34, 5, 36], [0, -66, 12, 50],
+      [-30, 30, 6, 44], [32, 22, 5, 40], [-6, 48, 8, 48], [22, -52, 6, 50]],
+    water: true,
+  },
+};
 
 export const ARENA_RADIUS = 20.5;
 const WALL_R = 27;
@@ -25,6 +54,7 @@ const SKY_FRAG = /* glsl */ `
   uniform vec3 uZenith;
   uniform vec3 uHorizon;
   uniform vec3 uGlow;
+  uniform vec3 uGlow2;
   uniform float uPhase;
   uniform float uTime;
   varying vec3 vDir;
@@ -39,7 +69,7 @@ const SKY_FRAG = /* glsl */ `
     float h = clamp(d.y, -0.2, 1.0);
     vec3 col = mix(uHorizon, uZenith, pow(max(h, 0.0), 0.55));
     float s = max(dot(d, uSun), 0.0);
-    vec3 glow = mix(uGlow, vec3(1.0, 0.25, 0.18), uPhase * 0.6);
+    vec3 glow = mix(uGlow, uGlow2, uPhase * 0.6);
     col += glow * (pow(s, 5.0) * 0.6 + pow(s, 40.0) * 1.1 + pow(s, 1.6) * 0.14);
     // soft drifting haze bands
     vec2 uv = vec2(atan(d.x, d.z) * 3.0, d.y * 9.0);
@@ -50,15 +80,16 @@ const SKY_FRAG = /* glsl */ `
   }
 `;
 
-function makeSkyMaterial() {
+function makeSkyMaterial(T) {
   return new THREE.ShaderMaterial({
     vertexShader: SKY_VERT,
     fragmentShader: SKY_FRAG,
     uniforms: {
       uSun: { value: SUN_DIR.clone() },
-      uZenith: { value: new THREE.Color(0x0d060b) },
-      uHorizon: { value: new THREE.Color(0x4a2229) },
-      uGlow: { value: new THREE.Color(0xffc49e) },
+      uZenith: { value: new THREE.Color(T.zenith) },
+      uHorizon: { value: new THREE.Color(T.horizon) },
+      uGlow: { value: new THREE.Color(T.glow) },
+      uGlow2: { value: new THREE.Color(T.glow2) },
       uPhase: { value: 0 },
       uTime: { value: 0 },
     },
@@ -69,7 +100,7 @@ function makeSkyMaterial() {
 }
 
 // ------------------------------------------------------------------ textures
-function stoneTexture(seed = 3) {
+function stoneTexture(seed = 3, hue = 340) {
   const noise = makeNoise2D(seed);
   const rnd = mulberry32(seed);
   return canvasTexture(512, 512, (g, w, h) => {
@@ -82,7 +113,7 @@ function stoneTexture(seed = 3) {
       while (x < w) {
         const bw = rh * (1.4 + rnd() * 1.2);
         const l = 38 + rnd() * 22;
-        g.fillStyle = `hsl(${340 + rnd() * 20}, ${6 + rnd() * 6}%, ${l * 0.62}%)`;
+        g.fillStyle = `hsl(${hue + rnd() * 20}, ${6 + rnd() * 6}%, ${l * 0.62}%)`;
         g.fillRect(x + 2, r * rh + 2, bw - 4, rh - 4);
         x += bw;
       }
@@ -100,7 +131,7 @@ function stoneTexture(seed = 3) {
   }, { repeat: true });
 }
 
-function floorTextures() {
+function floorTextures(hue = 345) {
   const S = 2048;
   const R = 34; // world radius covered by the texture
   const ppu = S / 2 / R;
@@ -160,7 +191,7 @@ function floorTextures() {
     g.fillRect(0, 0, S, S);
     drawTiles(g, (t) => {
       const l = t.outer ? 13 + t.shade * 7 : 19 + t.shade * 10;
-      return `hsl(${345 + t.shade * 20}, ${7 + t.shade * 5}%, ${l}%)`;
+      return `hsl(${hue + t.shade * 20}, ${7 + t.shade * 5}%, ${l}%)`;
     });
     // Central sigil plate.
     const cx = S / 2, cy = S / 2;
@@ -415,43 +446,46 @@ const SHAFT_FRAG = /* glsl */ `
 `;
 
 // ------------------------------------------------------------------ build
-export function buildArena(scene, renderer) {
+export function buildArena(scene, renderer, themeName = 'crimson', highQuality = true) {
+  const T = THEMES[themeName];
   const rnd = mulberry32(42);
   const animated = [];
   const phaseTargets = {};
+  const root = new THREE.Group();
+  root.visible = false;
+  scene.add(root);
 
   // Fog & sky
-  scene.fog = new THREE.FogExp2(0x2c171e, 0.0125);
-  const skyMat = makeSkyMaterial();
+  const fog = new THREE.FogExp2(T.fog, T.fogDensity);
+  const skyMat = makeSkyMaterial(T);
   const sky = new THREE.Mesh(new THREE.SphereGeometry(400, 32, 16), skyMat);
   sky.renderOrder = -10;
   sky.frustumCulled = false;
-  scene.add(sky);
+  root.add(sky);
 
   // Environment map from the sky gradient (for glossy reflections).
+  let envTex;
   {
     const pmrem = new THREE.PMREMGenerator(renderer);
     const envScene = new THREE.Scene();
-    const envSky = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), makeSkyMaterial());
+    const envSky = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), makeSkyMaterial(T));
     envScene.add(envSky);
     // Bright arched windows reflected on wet stone.
-    const winMat = new THREE.MeshBasicMaterial({ color: 0xffb899, side: THREE.DoubleSide });
+    const winMat = new THREE.MeshBasicMaterial({ color: T.window, side: THREE.DoubleSide });
     for (let i = -2; i <= 2; i++) {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(6, 18), winMat);
       w.position.set(i * 12, 9, -40);
       envScene.add(w);
     }
-    const rt = pmrem.fromScene(envScene, 0.02, 0.1, 200);
-    scene.environment = rt.texture;
-    scene.environmentIntensity = 0.55;
+    envTex = pmrem.fromScene(envScene, 0.02, 0.1, 200).texture;
     pmrem.dispose();
   }
 
   // ---------------------------------------------------------------- lights
-  const hemi = new THREE.HemisphereLight(0xffc6b4, 0x1b0b10, 0.6);
-  scene.add(hemi);
+  const hemi = new THREE.HemisphereLight(T.hemi, T.hemiGround, T.hemiI);
+  root.add(hemi);
 
-  const sun = new THREE.DirectionalLight(0xffc29c, 2.3);
+  const sun = new THREE.DirectionalLight(T.sun, T.sunI);
   sun.position.copy(SUN_DIR).multiplyScalar(70);
   sun.target.position.set(0, 0, 0);
   sun.castShadow = true;
@@ -461,18 +495,18 @@ export function buildArena(scene, renderer) {
   sc.near = 10; sc.far = 150;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.04;
-  scene.add(sun, sun.target);
+  root.add(sun, sun.target);
 
-  const fill = new THREE.DirectionalLight(0xff8fa0, 0.8);
+  const fill = new THREE.DirectionalLight(T.fill, 0.8);
   fill.position.set(8, 10, 30);
-  scene.add(fill);
+  root.add(fill);
 
   const rimFront = new THREE.DirectionalLight(0xffd9c4, 0.35);
   rimFront.position.set(-20, 6, 20);
-  scene.add(rimFront);
+  root.add(rimFront);
 
   // ---------------------------------------------------------------- floor
-  const ft = floorTextures();
+  const ft = floorTextures(T.hue);
   const floorMat = new THREE.MeshStandardMaterial({
     map: ft.map,
     roughnessMap: ft.rough,
@@ -484,11 +518,11 @@ export function buildArena(scene, renderer) {
   });
   const floor = new THREE.Mesh(new THREE.CircleGeometry(34, 128).rotateX(-Math.PI / 2), floorMat);
   floor.receiveShadow = true;
-  scene.add(floor);
+  root.add(floor);
 
   // Glowing sigil in the centre (brightens in phase two).
   const sigilMat = new THREE.MeshBasicMaterial({
-    color: 0xff3048,
+    color: T.sigil,
     transparent: true,
     opacity: 0.18,
     blending: THREE.AdditiveBlending,
@@ -496,27 +530,27 @@ export function buildArena(scene, renderer) {
   });
   const sigil = new THREE.Mesh(new THREE.RingGeometry(3.25, 3.45, 96).rotateX(-Math.PI / 2), sigilMat);
   sigil.position.y = 0.02;
-  scene.add(sigil);
+  root.add(sigil);
   const sigil2 = new THREE.Mesh(new THREE.RingGeometry(1.12, 1.26, 64).rotateX(-Math.PI / 2), sigilMat);
   sigil2.position.y = 0.02;
-  scene.add(sigil2);
+  root.add(sigil2);
   phaseTargets.sigil = sigilMat;
 
   // Outer ground beyond the hall.
-  const outerMat = new THREE.MeshStandardMaterial({ color: 0x1d1216, roughness: 0.9 });
+  const outerMat = new THREE.MeshStandardMaterial({ color: T.outer, roughness: 0.9 });
   const outer = new THREE.Mesh(new THREE.RingGeometry(33.5, 220, 64, 1).rotateX(-Math.PI / 2), outerMat);
   outer.position.y = -0.05;
   outer.receiveShadow = true;
-  scene.add(outer);
+  root.add(outer);
 
   // ---------------------------------------------------------------- stone
-  const stoneTex = stoneTexture(3);
+  const stoneTex = stoneTexture(3, T.hue - 5);
   stoneTex.repeat.set(0.22, 0.22);
-  const stoneMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: 0x9a8a90, roughness: 0.88, metalness: 0.0, envMapIntensity: 0.4 });
+  const stoneMat = new THREE.MeshStandardMaterial({ map: stoneTex, color: T.stone, roughness: 0.88, metalness: 0.0, envMapIntensity: 0.4 });
   const pillarTex = stoneTex.clone();
   pillarTex.repeat.set(3, 7);
   pillarTex.needsUpdate = true;
-  const pillarMat = new THREE.MeshStandardMaterial({ map: pillarTex, color: 0x8d7d84, roughness: 0.85, envMapIntensity: 0.4 });
+  const pillarMat = new THREE.MeshStandardMaterial({ map: pillarTex, color: T.pillar, roughness: 0.85, envMapIntensity: 0.4 });
 
   // Curb that marks the arena edge.
   const curbProfile = [
@@ -526,7 +560,7 @@ export function buildArena(scene, renderer) {
   const curb = new THREE.Mesh(new THREE.LatheGeometry(curbProfile, 128), stoneMat);
   curb.receiveShadow = true;
   curb.castShadow = true;
-  scene.add(curb);
+  root.add(curb);
 
   // Wall bays and pillars (instanced).
   const bayWidth = 2 * WALL_R * Math.sin(Math.PI / BAYS) - 1.6;
@@ -551,10 +585,10 @@ export function buildArena(scene, renderer) {
   }
   walls.castShadow = walls.receiveShadow = true;
   pillars.castShadow = pillars.receiveShadow = true;
-  scene.add(walls, pillars);
+  root.add(walls, pillars);
 
   // ---------------------------------------------------------------- distant architecture
-  const farMat = new THREE.MeshStandardMaterial({ color: 0x2a1c22, roughness: 1, envMapIntensity: 0.2 });
+  const farMat = new THREE.MeshStandardMaterial({ color: T.far, roughness: 1, envMapIntensity: 0.2 });
   const farParts = [];
   for (let i = 0; i < 46; i++) {
     const a = rnd() * Math.PI * 2;
@@ -604,25 +638,23 @@ export function buildArena(scene, renderer) {
     farParts.push(fac);
   }
   const far = new THREE.Mesh(mergeGeometries(farParts.map(ni)), farMat);
-  scene.add(far);
+  root.add(far);
 
   // ---------------------------------------------------------------- waterfalls
   const fallMat = new THREE.ShaderMaterial({
     vertexShader: FALL_VERT,
     fragmentShader: FALL_FRAG,
-    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(0xf0c8c0) }, uOpacity: { value: 0.42 } },
+    uniforms: { uTime: { value: 0 }, uColor: { value: new THREE.Color(T.waterfall) }, uOpacity: { value: 0.42 } },
     transparent: true,
     depthWrite: false,
     side: THREE.DoubleSide,
   });
-  const falls = [
-    [-14, -46, 7, 46], [9, -50, 10, 52], [30, -40, 5, 40], [-34, -34, 5, 36], [0, -66, 12, 50],
-  ];
+  const falls = T.falls;
   for (const [x, z, w, h] of falls) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h, 1, 1), fallMat);
     m.position.set(x, h / 2 - 3, z);
     m.lookAt(0, h / 2 - 3, 0);
-    scene.add(m);
+    root.add(m);
   }
   animated.push((t) => { fallMat.uniforms.uTime.value = t; });
 
@@ -633,12 +665,12 @@ export function buildArena(scene, renderer) {
     side: THREE.DoubleSide,
     roughness: 0.7,
     metalness: 0,
-    emissive: 0x3a0610,
+    emissive: T.leafEmissive,
     emissiveIntensity: 0.6,
   });
   const leafGeo = new THREE.PlaneGeometry(0.42, 0.42);
   const leafList = [];
-  const leafColors = [0xb3122c, 0x8e0d22, 0xd4243d, 0x6e0a1a, 0xe03a4f, 0x9a1830];
+  const leafColors = T.leaves;
   const addCluster = (cx, cy, cz, rx, ry, rz, n, sizeMul = 1, hang = 0) => {
     for (let i = 0; i < n; i++) {
       let x, y, z;
@@ -676,9 +708,9 @@ export function buildArena(scene, renderer) {
       addCluster(bx, by, bz, 3.2, 2.2, 3.2, 230, 1.4, 0.8);
     }
   }
-  const trunks = new THREE.Mesh(mergeGeometries(trunkParts.map(ni)), new THREE.MeshStandardMaterial({ color: 0x1a1013, roughness: 1 }));
+  const trunks = new THREE.Mesh(mergeGeometries(trunkParts.map(ni)), new THREE.MeshStandardMaterial({ color: T.trunk, roughness: 1 }));
   trunks.castShadow = true;
-  scene.add(trunks);
+  root.add(trunks);
 
   // Hanging vines on pillar capitals.
   for (const p of pillarPositions) {
@@ -697,7 +729,7 @@ export function buildArena(scene, renderer) {
     leaves.setColorAt(i, col.set(L.c));
   });
   leaves.castShadow = true;
-  scene.add(leaves);
+  root.add(leaves);
 
   // ---------------------------------------------------------------- lanterns
   const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e1a1c, roughness: 0.45, metalness: 0.8 });
@@ -744,7 +776,7 @@ export function buildArena(scene, renderer) {
     }
     g.add(body);
     g.userData = { phase: rnd() * 6, amp: 0.02 + rnd() * 0.02 };
-    scene.add(g);
+    root.add(g);
     lanterns.push(g);
   }
   animated.push((t) => {
@@ -775,11 +807,11 @@ export function buildArena(scene, renderer) {
       f.position.set(cx, 0.4 + h + 0.09, cz);
       f.scale.set(0.35, 0.5, 1);
       f.userData.p = rnd() * 10;
-      scene.add(f);
+      root.add(f);
       flames.push(f);
     }
   }
-  scene.add(new THREE.Mesh(mergeGeometries(candleParts.map(ni)), candleMat));
+  root.add(new THREE.Mesh(mergeGeometries(candleParts.map(ni)), candleMat));
   animated.push((t) => {
     for (const f of flames) {
       const k = 0.85 + Math.sin(t * 11 + f.userData.p) * 0.1 + Math.sin(t * 23 + f.userData.p * 2) * 0.06;
@@ -791,7 +823,7 @@ export function buildArena(scene, renderer) {
   const shaftMat = new THREE.ShaderMaterial({
     vertexShader: SHAFT_VERT,
     fragmentShader: SHAFT_FRAG,
-    uniforms: { uColor: { value: new THREE.Color(0xffc8a8) }, uOpacity: { value: 0.035 }, uTime: { value: 0 } },
+    uniforms: { uColor: { value: new THREE.Color(T.shaft) }, uOpacity: { value: 0.035 }, uTime: { value: 0 } },
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
@@ -807,27 +839,41 @@ export function buildArena(scene, renderer) {
     s.position.copy(base).addScaledVector(SUN_DIR, -2);
     s.quaternion.setFromUnitVectors(up, SUN_DIR);
     s.scale.set(0.9 + rnd() * 0.5, 1, 0.9 + rnd() * 0.5);
-    scene.add(s);
+    root.add(s);
   }
   animated.push((t) => { shaftMat.uniforms.uTime.value = t; });
 
   // ---------------------------------------------------------------- phase shift
   const base = {
-    fog: new THREE.Color(0x2c171e), fog2: new THREE.Color(0x3a0f16),
-    sun: new THREE.Color(0xffc29c), sun2: new THREE.Color(0xff6a4a),
-    hemi: new THREE.Color(0xffc6b4), hemi2: new THREE.Color(0xff8a8a),
+    fog: new THREE.Color(T.fog), fog2: new THREE.Color(T.fog2),
+    sun: new THREE.Color(T.sun), sun2: new THREE.Color(T.sun2),
+    hemi: new THREE.Color(T.hemi), hemi2: new THREE.Color(T.hemi2),
   };
+  const water = T.water ? buildWater(root, highQuality) : null;
   let phaseK = 0;
   let phaseTarget = 0;
 
   return {
+    name: themeName,
+    root,
+    water,
     pillarPositions,
+    activate() {
+      scene.fog = fog;
+      scene.environment = envTex;
+      scene.environmentIntensity = 0.55;
+      root.visible = true;
+    },
+    deactivate() {
+      root.visible = false;
+    },
     update(dt, t) {
       skyMat.uniforms.uTime.value = t;
       for (const fn of animated) fn(t);
       phaseK += (phaseTarget - phaseK) * (1 - Math.exp(-1.2 * dt));
       skyMat.uniforms.uPhase.value = phaseK;
-      scene.fog.color.lerpColors(base.fog, base.fog2, phaseK);
+      fog.color.lerpColors(base.fog, base.fog2, phaseK);
+      if (water) water.update(t, phaseK);
       sun.color.lerpColors(base.sun, base.sun2, phaseK * 0.7);
       hemi.color.lerpColors(base.hemi, base.hemi2, phaseK * 0.6);
       sigilMat.opacity = lerp(0.18, 0.7, phaseK) * (0.85 + Math.sin(t * 3) * 0.15);

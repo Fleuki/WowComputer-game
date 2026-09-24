@@ -114,6 +114,12 @@ export class AudioSys {
     }
   }
 
+  /** Which track plays in each phase for the selected boss. */
+  setTrackPlan(plan) {
+    this.plan = plan;
+    this._applyIntensity();
+  }
+
   /** Muffle the music (pause menu). */
   setMuffled(m) {
     this.muffled = m;
@@ -139,7 +145,8 @@ export class AudioSys {
   _applyIntensity() {
     if (!this.ctx || !this.tracksReady) return;
     const I = this.intensity;
-    const want = I >= 2 ? 'ash' : I >= 0 ? 'drowned' : null;
+    const plan = this.plan || { p1: 'drowned', p2: 'ash' };
+    const want = I >= 2 ? plan.p2 : I >= 0 ? plan.p1 : null;
     if (want !== (this.cur && this.cur.name)) {
       if (this.cur) this._stopTrack(this.cur, I < 0 ? 2.5 : 1.6);
       this.cur = want ? this._startTrack(want, I >= 2 ? 1.2 : 2.5) : null;
@@ -371,6 +378,35 @@ export class AudioSys {
       case 'victory':
         [50, 57, 62, 66, 69, 74].forEach((n, i) => this._tone({ t: t + i * 0.18, type: 'triangle', f0: NOTE(n), dur: 4, gain: 0.08 * v, attack: 0.04 }));
         break;
+      case 'bell': {
+        // Church bell: inharmonic partials (hum, prime, minor tierce, quint, nominal) with long decays.
+        const f = 98 * p;
+        [[0.5, 1, 4.5], [1, 0.8, 3.5], [1.19, 0.5, 2.8], [1.5, 0.35, 2.2], [2.0, 0.45, 2.6], [2.67, 0.2, 1.4], [3.2, 0.15, 1.0]].forEach(([m, a, d]) => {
+          this._tone({ t, type: 'sine', f0: f * m, f1: f * m * 0.998, dur: d, gain: 0.16 * a * v, attack: 0.004 });
+        });
+        this._noise({ t, dur: 0.12, type: 'bandpass', f0: 2500, f1: 1200, q: 2, gain: 0.25 * v });
+        break;
+      }
+      case 'splash':
+        this._noise({ t, dur: 0.45, type: 'lowpass', f0: 3200 * p, f1: 300, q: 0.7, gain: 0.45 * v, attack: 0.01 });
+        this._noise({ t: t + 0.05, dur: 0.35, type: 'bandpass', f0: 1800, f1: 3500, q: 3, gain: 0.12 * v });
+        break;
+      case 'wave':
+        this._noise({ t, dur: 1.4, type: 'lowpass', f0: 400, f1: 2400, q: 0.8, gain: 0.5 * v, attack: 0.3 });
+        this._noise({ t: t + 0.4, dur: 1.2, type: 'bandpass', f0: 1500, f1: 600, q: 1, gain: 0.25 * v, attack: 0.2 });
+        break;
+      case 'emerge':
+        this._noise({ t, dur: 1.0, type: 'lowpass', f0: 2600, f1: 120, q: 0.7, gain: 0.8 * v });
+        this._tone({ t, type: 'sine', f0: 70, f1: 30, dur: 0.9, gain: 0.7 * v });
+        this._noise({ t: t + 0.1, dur: 0.6, type: 'bandpass', f0: 3000, f1: 1500, q: 2, gain: 0.2 * v });
+        break;
+      case 'drip':
+        this._tone({ t, type: 'sine', f0: 1400 * p, f1: 600 * p, dur: 0.12, gain: 0.12 * v });
+        this._noise({ t, dur: 0.1, type: 'bandpass', f0: 2500, f1: 1200, q: 3, gain: 0.08 * v });
+        break;
+      case 'choirHum':
+        [57, 60, 64].forEach((n, i) => this._choir(NOTE(n - 12) * p, t + i * 0.05, 1.8, this.sfx, 0.05 * v));
+        break;
       case 'ui':
         this._tone({ t, type: 'triangle', f0: 880, f1: 1320, dur: 0.12, gain: 0.08 * v });
         break;
@@ -462,7 +498,7 @@ export class AudioSys {
     }
   }
 
-  _choir(freq, t, dur, out) {
+  _choir(freq, t, dur, out, peak = 0.02) {
     const ctx = this.ctx;
     const o = ctx.createOscillator();
     o.type = 'sawtooth';
@@ -474,7 +510,7 @@ export class AudioSys {
     lfo.connect(lfoG).connect(o.frequency);
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.02, t + dur * 0.4);
+    g.gain.linearRampToValueAtTime(peak, t + dur * 0.4);
     g.gain.linearRampToValueAtTime(0.0001, t + dur * 1.05);
     for (const [f, q] of [[700, 6], [1150, 8]]) {
       const bp = ctx.createBiquadFilter();

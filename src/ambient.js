@@ -25,12 +25,13 @@ const MOTE_VERT = /* glsl */ `
   }
 `;
 const MOTE_FRAG = /* glsl */ `
+  uniform vec3 uMote;
   varying float vAlpha;
   varying float vEmber;
   void main() {
     float d = length(gl_PointCoord - 0.5) * 2.0;
     float a = pow(max(1.0 - d, 0.0), 2.0) * vAlpha;
-    vec3 col = mix(vec3(1.0, 0.85, 0.7), vec3(1.0, 0.35, 0.15), vEmber);
+    vec3 col = mix(uMote, vec3(1.0, 0.35, 0.15), vEmber);
     gl_FragColor = vec4(col, a * (0.7 + vEmber * 0.6));
   }
 `;
@@ -85,7 +86,7 @@ export class Ambient {
     this.moteMat = new THREE.ShaderMaterial({
       vertexShader: MOTE_VERT,
       fragmentShader: MOTE_FRAG,
-      uniforms: { uTime: { value: 0 }, uScale: { value: 400 }, uEmber: { value: 0 } },
+      uniforms: { uTime: { value: 0 }, uScale: { value: 400 }, uEmber: { value: 0 }, uMote: { value: new THREE.Color(1.0, 0.85, 0.7) } },
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -93,6 +94,20 @@ export class Ambient {
     this.motes = new THREE.Points(g, this.moteMat);
     this.motes.frustumCulled = false;
     scene.add(this.motes);
+  }
+
+  /** Crimson petals in the red cathedral; pale drifting lace scraps in the drowned one. */
+  setTheme(name) {
+    const m = this.petals.material;
+    if (name === 'drowned') {
+      m.color.set(0xc9d8d6);
+      m.emissive.set(0x0c2226);
+      this.moteMat.uniforms.uMote.value.setRGB(0.7, 0.92, 1.0);
+    } else {
+      m.color.set(0xd21e3c);
+      m.emissive.set(0x5a0614);
+      this.moteMat.uniforms.uMote.value.setRGB(1.0, 0.85, 0.7);
+    }
   }
 
   /** A sudden gust (e.g. from the boss slamming or roaring). */
